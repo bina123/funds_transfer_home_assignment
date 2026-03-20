@@ -1,0 +1,9 @@
+framework:
+    secret: '%env(APP_SECRET)%'
+    session: true
+    rate_limiter:
+        transfer_api:
+            policy: sliding_window
+            limit: 30
+            interval: '60 seconds'
+            cache_pool: cache.app

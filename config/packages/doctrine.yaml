@@ -1,0 +1,50 @@
+doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        server_version: '8.0.0'
+        profiling_collect_backtrace: '%kernel.debug%'
+    orm:
+        validate_xml_mapping: true
+        naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware
+        auto_mapping: false
+        mappings:
+            # Account module — Doctrine maps only the Domain layer of each module.
+            # Infrastructure and Application layers contain no ORM entities.
+            AccountDomain:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/Module/Account/Domain'
+                prefix: 'App\Module\Account\Domain'
+                alias: AccountDomain
+            # Transfer module
+            TransferDomain:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/Module/Transfer/Domain'
+                prefix: 'App\Module\Transfer\Domain'
+                alias: TransferDomain
+        controller_resolver:
+            auto_mapping: false
+
+when@test:
+    doctrine:
+        dbal:
+            dbname_suffix: '_test%env(default::TEST_TOKEN)%'
+
+when@prod:
+    doctrine:
+        orm:
+            query_cache_driver:
+                type: pool
+                pool: doctrine.system_cache_pool
+            result_cache_driver:
+                type: pool
+                pool: doctrine.result_cache_pool
+
+    framework:
+        cache:
+            pools:
+                doctrine.result_cache_pool:
+                    adapter: cache.app
+                doctrine.system_cache_pool:
+                    adapter: cache.system

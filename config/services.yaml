@@ -1,0 +1,38 @@
+# This file is the entry point to configure your own services.
+# Files in the packages/ subdirectory configure your dependencies.
+
+parameters:
+
+services:
+    _defaults:
+        autowire: true # Symfony injects constructor dependencies by type
+        autoconfigure: true # Symfony auto-registers listeners, commands, etc.
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            # Domain layers contain entities and value objects — not services.
+            # Registering them would cause Doctrine/Symfony conflicts.
+            - '../src/Module/Account/Domain/'
+            - '../src/Module/Transfer/Domain/'
+            - '../src/Kernel.php'
+
+    # Dependency Inversion: bind interfaces to their Infrastructure implementations.
+    # The Application layer and Controllers depend only on interfaces, never on Doctrine.
+    # To swap MySQL for PostgreSQL or Doctrine for another ORM, only these lines change.
+    App\Module\Account\Domain\AccountRepositoryInterface:
+        alias: App\Module\Account\Infrastructure\Persistence\DoctrineAccountRepository
+
+    App\Module\Transfer\Domain\TransferRepositoryInterface:
+        alias: App\Module\Transfer\Infrastructure\Persistence\DoctrineTransferRepository
+
+    App\Module\Account\Domain\LedgerRepositoryInterface:
+        alias: App\Module\Account\Infrastructure\Persistence\DoctrineLedgerRepository
+
+    App\Shared\EventListener\ExceptionListener:
+        arguments:
+            $appEnv: '%kernel.environment%'
+
+    App\Controller\Api\V1\HealthController:
+        autowire: true

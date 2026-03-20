@@ -1,0 +1,9 @@
+framework:
+    test: true
+    session:
+        storage_factory_id: session.storage.factory.mock_file
+    rate_limiter:
+        transfer_api:
+            policy: sliding_window
+            limit: 1000
+            interval: "60 seconds"
