@@ -763,6 +763,34 @@ make logs         # Tail container logs
 
 ---
 
+### AI Tools Used
+
+**Tool:** Claude (Anthropic) via Claude Code CLI
+
+AI was used in two distinct phases: upfront research before writing a single line of code, and then as a sounding board during implementation.
+
+**Phase 1 — R&D / Architecture exploration**
+
+Before starting I had a free-form conversation with Claude to understand what architectural patterns are typically used for fintech payment APIs at different scales:
+
+- *"What are the common architectural patterns for a fund transfer API? When would you choose a simple layered architecture vs DDD vs event sourcing?"*
+- *"For a Symfony-based transfer API that needs to handle concurrent balance updates correctly, what are the must-have design decisions?"*
+- *"What is the difference between a Modular Monolith and microservices in practice, and when does a Modular Monolith make more sense?"*
+
+These conversations shaped the decision to go with a **Modular Monolith + DDD** approach — modules with hard internal boundaries (Domain / Application / Infrastructure) that could be extracted into separate services later without touching business logic. I also learned about the importance of storing amounts in minor units, using optimistic locking over pessimistic, and keeping the idempotency key on the client side.
+
+**Phase 2 — Implementation support**
+
+- **Idempotency edge cases** — *"In a fund transfer API, what edge cases should idempotency cover beyond the happy path?"* — prompted me to think about the failed-transfer case (idempotency key not consumed on failure), which I had initially overlooked.
+- **Optimistic locking** — *"Trade-offs between optimistic and pessimistic locking for concurrent balance updates in Doctrine ORM?"* — reinforced my choice of `@Version` over `SELECT FOR UPDATE`.
+- **Ledger design** — Discussed `credit`/`debit` columns vs. signed `amount` + `direction` enum. Chose direction enum for readability after seeing both laid out.
+- **Test scenario coverage** — *"What integration test cases should a fund transfer API cover beyond happy path and insufficient funds?"* — surfaced the concurrent transfer test and the reversal-of-a-failed-transfer guard.
+- **Boilerplate** — Used Claude to generate initial Doctrine entity mapping stubs and migration skeletons, which I adjusted to match the domain model.
+
+All business logic, architectural decisions, and design trade-offs are my own. AI accelerated the research phase and helped validate thinking during implementation.
+
+---
+
 ### Development Approach
 
 I built this inside-out — domain layer first, HTTP layer last. The idea is that business rules shouldn't depend on Symfony or Doctrine at all; those are just delivery mechanisms.
