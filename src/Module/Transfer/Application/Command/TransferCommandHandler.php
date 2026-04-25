@@ -11,6 +11,7 @@ use App\Module\Account\Domain\Exception\InsufficientFundsException;
 use App\Module\Account\Domain\LedgerEntry;
 use App\Module\Account\Domain\LedgerRepositoryInterface;
 use App\Module\Account\Domain\Money;
+use App\Module\Transfer\Application\Port\FailedTransferRecorderInterface;
 use App\Module\Transfer\Domain\Exception\TransferLimitExceededException;
 use App\Module\Transfer\Application\Query\TransferResponse;
 use App\Module\Transfer\Domain\Event\TransferCompletedEvent;
@@ -21,7 +22,6 @@ use App\Shared\Exception\AccountNotFoundException;
 use App\Shared\Exception\TransferConflictException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\LockMode;
-use Symfony\Component\Uid\Uuid;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\OptimisticLockException;
 use Psr\Log\LoggerInterface;
@@ -81,6 +81,7 @@ final class TransferCommandHandler
         private readonly AccountRepositoryInterface $accountRepository,
         private readonly TransferRepositoryInterface $transferRepository,
         private readonly LedgerRepositoryInterface $ledgerRepository,
+        private readonly FailedTransferRecorderInterface $failedTransferRecorder,
         private readonly LoggerInterface $logger,
         private readonly EventDispatcherInterface $eventDispatcher,
     ) {
@@ -145,7 +146,7 @@ final class TransferCommandHandler
         // A fresh idempotency key is generated so the original remains available for retries:
         // the client can reuse the same key after resolving the issue (e.g. topping up balance).
         if (!($e instanceof AccountNotFoundException)) {
-            $this->persistFailedTransfer($command, $reason);
+            $this->failedTransferRecorder->record($command, $reason);
         }
 
         try {
@@ -162,63 +163,6 @@ final class TransferCommandHandler
             $this->logger->error('Failed to dispatch TransferFailedEvent.', [
                 'original_error' => $e->getMessage(),
                 'dispatch_error' => $dispatchException->getMessage(),
-            ]);
-        }
-    }
-
-    /**
-     * Persists a Transfer row with STATUS_FAILED using DBAL directly.
-     *
-     * Why DBAL, not ORM?
-     * - wrapInTransaction rolled back the DB transaction; the ORM identity map may
-     *   contain Account entities with modified in-memory state (debit/credit applied
-     *   but never committed). Flushing them would be incorrect.
-     * - DBAL inserts outside ORM state are safe and bypass the stale identity map.
-     * - A fresh auto-commit INSERT starts its own implicit transaction.
-     *
-     * Why a new idempotency key?
-     * - The original key must remain available for the client to retry the transfer.
-     *   If we stored it on the failed row, the idempotency guard would return the
-     *   failed transfer on the next attempt instead of re-executing the transfer.
-     */
-    private function persistFailedTransfer(TransferCommand $command, string $reason): void
-    {
-        try {
-            $conn = $this->entityManager->getConnection();
-
-            // Resolve integer PKs from public-facing UUIDs — required for FK columns.
-            $fromId = $conn->fetchOne('SELECT id FROM accounts WHERE uuid = ?', [$command->fromAccountId]);
-            $toId   = $conn->fetchOne('SELECT id FROM accounts WHERE uuid = ?', [$command->toAccountId]);
-
-            if ($fromId === false || $toId === false) {
-                // At least one account was not found — cannot create a valid FK reference.
-                return;
-            }
-
-            $conn->insert('transfers', [
-                'uuid'                      => Uuid::v7()->toRfc4122(),
-                'idempotency_key'           => Uuid::v7()->toRfc4122(),
-                'from_account_id'           => $fromId,
-                'to_account_id'             => $toId,
-                'amount'                    => $command->amount,
-                'currency'                  => strtoupper($command->currency),
-                'status'                    => Transfer::STATUS_FAILED,
-                'failure_reason'            => $reason,
-                'created_at'                => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
-                'reversal_of_transfer_id'   => null,
-                'reversal_of_transfer_uuid' => null,
-            ]);
-
-            $this->logger->info('Failed transfer record persisted.', [
-                'from_account' => $command->fromAccountId,
-                'to_account'   => $command->toAccountId,
-                'reason'       => $reason,
-            ]);
-        } catch (\Throwable $persistException) {
-            // Never let persistence failure hide the original business exception.
-            $this->logger->error('Failed to persist failed transfer record.', [
-                'failure_reason' => $reason,
-                'persist_error'  => $persistException->getMessage(),
             ]);
         }
     }

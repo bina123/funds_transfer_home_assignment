@@ -27,6 +27,9 @@ services:
     App\Module\Transfer\Domain\TransferRepositoryInterface:
         alias: App\Module\Transfer\Infrastructure\Persistence\DoctrineTransferRepository
 
+    App\Module\Transfer\Application\Port\FailedTransferRecorderInterface:
+        alias: App\Module\Transfer\Infrastructure\Persistence\DoctrineFailedTransferRecorder
+
     App\Module\Account\Domain\LedgerRepositoryInterface:
         alias: App\Module\Account\Infrastructure\Persistence\DoctrineLedgerRepository
 
